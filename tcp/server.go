@@ -2,43 +2,71 @@ package tcp
 
 import (
 	"context"
+	"fmt"
 	"go-redis/interface/tcp"
 	"go-redis/lib/logger"
 	"net"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 )
 
 // Config 启动tcp服务器的配置
 type Config struct {
-	// Address 监听地址
-	Address string
+	Address    string        `yaml:"address"`
+	MaxConnect uint32        `yaml:"max-connect"`
+	Timeout    time.Duration `yaml:"timeout"`
 }
 
-func ListenAndServeWithSignal(cfg *Config,
-	handler tcp.Handler) error {
+func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
 	closeChan := make(chan struct{})
-	listen, err := net.Listen("tcp", cfg.Address)
+	sigCh := make(chan os.Signal)
+	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig := <-sigCh
+		switch sig {
+		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+			closeChan <- struct{}{}
+		}
+	}()
+	listener, err := net.Listen("tcp", cfg.Address)
 	if err != nil {
 		return err
 	}
-	logger.Info("start listen")
-	ListenAndServe(listen, handler, closeChan)
+	logger.Info(fmt.Sprintf("bind: %s, start listening...", cfg.Address))
+	ListenAndServe(listener, handler, closeChan)
 	return nil
 }
 
-func ListenAndServe(listener net.Listener,
-	handler tcp.Handler,
-	closeChan <-chan struct{}) {
+func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan struct{}) {
+	go func() {
+		<-closeChan
+		logger.Info("shutting down...")
+		_ = listener.Close()
+		_ = handler.Close()
+	}()
+
+	defer func() {
+		_ = listener.Close()
+		_ = handler.Close()
+	}()
 	ctx := context.Background()
-	for true {
+	var waitDone sync.WaitGroup
+	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			break
 		}
-		// 接收到新连接
 		logger.Info("accept link")
-		// 一个协程一个连接
+		waitDone.Add(1)
 		go func() {
-			handler.Handler(ctx, conn)
+			defer func() {
+				waitDone.Done()
+			}()
+			handler.Handle(ctx, conn)
 		}()
 	}
+	waitDone.Wait()
 }
