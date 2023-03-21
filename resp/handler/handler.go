@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"go-redis/database"
+	database2 "go-redis/database"
 	databaseface "go-redis/interface/database"
 	"go-redis/lib/logger"
 	"go-redis/lib/sync/atomic"
@@ -27,7 +27,7 @@ type RespHandler struct {
 
 func MakeHandler() *RespHandler {
 	var db databaseface.Database
-	db = database.NewEchoDatabase()
+	db = database2.NewDatabase()
 	return &RespHandler{
 		db: db,
 	}
