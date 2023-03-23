@@ -26,7 +26,7 @@ func main() {
 		Path:       "logs",
 		Name:       "godis",
 		Ext:        "log",
-		TimeFormat: "2006-01-02",
+		TimeFormat: "2022-02-02",
 	})
 
 	if fileExists(configFile) {
